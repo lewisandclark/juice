@@ -48,34 +48,26 @@ class JuiceLocal
 
 class JuiceRemote
 
+  @xmlhttp = false
+  @factories = [
+    `function(){ return new XMLHttpRequest(); }`,
+    `function(){ return new ActiveXObject("Msxml2.XMLHTTP 6.0"); }`,
+    `function(){ return new ActiveXObject("Msxml2.XMLHTTP 3.0"); }`,
+    `function(){ return new ActiveXObject("Msxml2.XMLHTTP"); }`,
+    `function(){ return new ActiveXObject("Msxml3.XMLHTTP"); }`,
+    `function(){ return new ActiveXObject("Microsoft.XMLHTTP"); }`,
+  ]
+
   constructor: ( domain=document.location.origin, base_path='' ) ->
-    @request = superagent
+    null
 
-  get: () ->
-    @request.get().set('Accept', 'application/json').end();
-
-  ###
-    ajax methods: https://github.com/visionmedia/superagent
-
-  getXHR: () ->
-    if window.XMLHttpRequest and ('file:' != window.location.protocol or !window.ActiveXObject)
-      return new XMLHttpRequest
-    else
+  createXHR: () ->
+    for factory in @factories
       try
-        return new ActiveXObject 'Microsoft.XMLHTTP'
+        @xmlhttp = factory()
       catch e
-      try
-        return new ActiveXObject 'Msxml2.XMLHTTP.6.0'
-      catch e
-      try
-        return new ActiveXObject 'Msxml2.XMLHTTP.3.0'
-      catch e
-      try
-        return new ActiveXObject 'Msxml2.XMLHTTP'
-      catch e
-    return false
-  ###
-
+        continue
+      break
 
 ###
 

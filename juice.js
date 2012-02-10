@@ -70,37 +70,31 @@
 
   JuiceRemote = (function() {
 
+    JuiceRemote.xmlhttp = false;
+
+    JuiceRemote.factories = [function(){ return new XMLHttpRequest(); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP 6.0"); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP 3.0"); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP"); }, function(){ return new ActiveXObject("Msxml3.XMLHTTP"); }, function(){ return new ActiveXObject("Microsoft.XMLHTTP"); }];
+
     function JuiceRemote(domain, base_path) {
       if (domain == null) domain = document.location.origin;
       if (base_path == null) base_path = '';
-      this.request = superagent;
+      null;
     }
 
-    JuiceRemote.prototype.get = function() {
-      return this.request.get().set('Accept', 'application/json').end();
+    JuiceRemote.prototype.createXHR = function() {
+      var factory, _i, _len, _ref, _results;
+      _ref = this.factories;
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        factory = _ref[_i];
+        try {
+          this.xmlhttp = factory();
+        } catch (e) {
+          continue;
+        }
+        break;
+      }
+      return _results;
     };
-
-    /*
-        ajax methods: https://github.com/visionmedia/superagent
-    
-      getXHR: () ->
-        if window.XMLHttpRequest and ('file:' != window.location.protocol or !window.ActiveXObject)
-          return new XMLHttpRequest
-        else
-          try
-            return new ActiveXObject 'Microsoft.XMLHTTP'
-          catch e
-          try
-            return new ActiveXObject 'Msxml2.XMLHTTP.6.0'
-          catch e
-          try
-            return new ActiveXObject 'Msxml2.XMLHTTP.3.0'
-          catch e
-          try
-            return new ActiveXObject 'Msxml2.XMLHTTP'
-          catch e
-        return false
-    */
 
     return JuiceRemote;
 
