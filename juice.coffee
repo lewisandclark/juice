@@ -1,25 +1,44 @@
 
-$(document).ready ->
-  
-  document.juice = new Juice
-
-
 class Juice
 
+
+  ###
+  Ready code adapted from jQuery: https://github.com/jquery/jquery/blob/master/src/core.js
+  ###
+
   constructor: () ->
-    @local = new JuiceLocal
+    @ready_fired = false
     @remote = new JuiceRemote
+    @remote.get 'http://www.lclark.edu/core/libs/persist-js/persist-min.js', (xhr) ->
+      eval xhr.response
+      console.log xhr
+      Persist.remove 'cookie'
+      Persist.remove 'ie'
+      Persist.remove 'flash'
+    @remote.get 'http://www.lclark.edu/core/libs/jquery/jquery-1.7.1.min.js', (xhr) ->
+      eval xhr.response
+      console.log xhr
+      console.log $
+    if document.addEventListener?
+      document.addEventListener "DOMContentLoaded", @ready, false
+      window.addEventListener "load", @ready, false
+    else if document.attachEvent?
+      document.attachEvent "onreadystatechange", @ready
+      window.attachEvent "onload", @ready
 
-  refresh_manifest: () ->
+  ready: (e) ->
+    return null if document.juice.ready_fired
+    document.juice.init()
+
+  init: () ->
+    @ready_fired = true
+
+  assets: () ->
+    document.getElementsByTagName 'asset'
+
     
-
-  manifest: () ->
-    try
-      @store.get 'manifest'
-    catch e    
-      console.log e
-
-
+  
+    
 
 class JuiceLocal
 
@@ -48,71 +67,56 @@ class JuiceLocal
 
 class JuiceRemote
 
-  @xmlhttp = false
-  @factories = [
-    `function(){ return new XMLHttpRequest(); }`,
-    `function(){ return new ActiveXObject("Msxml2.XMLHTTP 6.0"); }`,
-    `function(){ return new ActiveXObject("Msxml2.XMLHTTP 3.0"); }`,
-    `function(){ return new ActiveXObject("Msxml2.XMLHTTP"); }`,
-    `function(){ return new ActiveXObject("Msxml3.XMLHTTP"); }`,
-    `function(){ return new ActiveXObject("Microsoft.XMLHTTP"); }`,
-  ]
+  ###
+  AJAX Class
+  https://github.com/visionmedia/superagent (extra factories)
+  http://www.quirksmode.org/js/xmlhttp.html (most of this code)
+  ###
 
   constructor: ( domain=document.location.origin, base_path='' ) ->
-    null
+    @factories = [
+      `function(){ return new XMLHttpRequest(); }`,
+      `function(){ return new ActiveXObject("Msxml2.XMLHTTP 6.0"); }`,
+      `function(){ return new ActiveXObject("Msxml2.XMLHTTP 3.0"); }`,
+      `function(){ return new ActiveXObject("Msxml2.XMLHTTP"); }`,
+      `function(){ return new ActiveXObject("Msxml3.XMLHTTP"); }`,
+      `function(){ return new ActiveXObject("Microsoft.XMLHTTP"); }`,
+    ]
 
   createXHR: () ->
+    xmlhttp = false
     for factory in @factories
       try
-        @xmlhttp = factory()
+        xmlhttp = factory()
       catch e
         continue
       break
+    xmlhttp
+
+  post: (url, callback, postData=null) ->
+    request = @createXHR()
+    return null if !request?
+    method = if postData? then 'POST' else 'GET'
+    request.open method, url, true
+    request.setRequestHeader 'Content-type', 'application/x-www-form-urlencoded' if postData?
+    request.onreadystatechange = () ->
+      console.log('readystate')
+      return null if request.readyState isnt 4
+      throw new Error('HTTP error: ' + request.status) if request.status isnt 200 and request.status isnt 304
+      callback(request)
+    return null if request.readyState is 4
+    request.send(postData)
+
+  get: (url, callback) ->
+    @post(url, callback)
+
+
+document.juice = new Juice
 
 ###
-
-http://www.quirksmode.org/js/xmlhttp.html
-
-function sendRequest(url,callback,postData) {
-	var req = createXMLHTTPObject();
-	if (!req) return;
-	var method = (postData) ? "POST" : "GET";
-	req.open(method,url,true);
-	req.setRequestHeader('User-Agent','XMLHTTP/1.0');
-	if (postData)
-		req.setRequestHeader('Content-type','application/x-www-form-urlencoded');
-	req.onreadystatechange = function () {
-		if (req.readyState != 4) return;
-		if (req.status != 200 && req.status != 304) {
-//			alert('HTTP error ' + req.status);
-			return;
-		}
-		callback(req);
-	}
-	if (req.readyState == 4) return;
-	req.send(postData);
-}
-
-var XMLHttpFactories = [
-	function () {return new XMLHttpRequest()},
-	function () {return new ActiveXObject("Msxml2.XMLHTTP")},
-	function () {return new ActiveXObject("Msxml3.XMLHTTP")},
-	function () {return new ActiveXObject("Microsoft.XMLHTTP")}
-];
-
-function createXMLHTTPObject() {
-	var xmlhttp = false;
-	for (var i=0;i<XMLHttpFactories.length;i++) {
-		try {
-			xmlhttp = XMLHttpFactories[i]();
-		}
-		catch (e) {
-			continue;
-		}
-		break;
-	}
-	return xmlhttp;
-}
+console.log(document.getElementsByTagName('asset'));
+console.log(document.getElementsByName('manifest')[0].hasChildNodes());
+console.log(document.getElementsByName('manifest')[0].childNodes());
 ###
 
 ###
@@ -122,7 +126,7 @@ persistJS (persist-min.js, extras/gears_init.js)
 JSON (should be built in)
 some form of document.ready, use jquery’s?: https://github.com/jquery/jquery/blob/master/src/core.js
 console.log?
-ajax -- hmmm, this is a challenge
+ajax
 
 
 process
