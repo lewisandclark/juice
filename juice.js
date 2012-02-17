@@ -1,48 +1,66 @@
 (function() {
-  var Juice, JuiceLocal, JuiceRemote;
+  var Juice, JuiceAsset, JuiceBase, JuiceLocal, JuiceRemote,
+    __hasProp = Object.prototype.hasOwnProperty,
+    __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor; child.__super__ = parent.prototype; return child; };
 
-  Juice = (function() {
+  JuiceBase = (function() {
+
+    function JuiceBase() {}
+
+    /*
+      usage: log('inside coolFunc',this,arguments);
+      http://paulirish.com/2009/log-a-lightweight-wrapper-for-consolelog/
+    */
+
+    JuiceBase.prototype.log = function(message, caller) {
+      if (!(message != null)) return null;
+      this.history = this.history || [];
+      this.history.push(arguments);
+      this.history.push(arguments);
+      if ((typeof console !== "undefined" && console !== null) && (console.log != null)) {
+        console.log(message);
+        if ((caller != null) && (caller.name != null)) console.log(caller.name);
+        return console.log(Array.prototype.slice.call(arguments));
+      }
+    };
+
+    return JuiceBase;
+
+  })();
+
+  Juice = (function(_super) {
+
+    __extends(Juice, _super);
+
     /*
       Ready code adapted from jQuery: https://github.com/jquery/jquery/blob/master/src/core.js
     */
+
     function Juice() {
       var obj;
-      this.ready_fired = false;
+      this.is_ready = false;
       this.url = this.self_dirname();
-      this.assets = document.getElementsByTagName('asset');
+      this.register_assets();
       this.remote = new JuiceRemote(this);
       obj = this;
       this.remote.get('http://www.lclark.edu/core/libs/juice/third-party/persist-js/persist-all-min.js', function(xhr) {
         if (xhr.status === 200) {
-          eval(xhr.response);
-          obj.local = new JuiceLocal(obj);
-          return obj.load();
-          /* yes this works
-          if obj.local?
-            jquery = obj.local.get('jquery-1.7.1.min.js')
-            if jquery?
-              eval jquery
-              return null
-          else
-            obj.remote.get 'http://www.lclark.edu/core/libs/jquery/jquery-1.7.1.min.js', (xhr) ->
-              if xhr.status is 200
-                eval xhr.response
-                console.log 'run from load'
-                console.log $('asset').length
-                obj.local.set('jquery-1.7.1.min.js', xhr.response) if obj.local
-              else
-                console.log xhr
-          */
+          try {
+            eval(xhr.response);
+          } catch (e) {
+            obj.log(e, arguments);
+          }
+          return obj.load_when_ready();
         } else {
-          return console.log(xhr);
+          return obj.log(xhr, arguments);
         }
       });
       if (document.addEventListener != null) {
-        document.addEventListener("DOMContentLoaded", this.run_ready_once, false);
-        window.addEventListener("load", this.run_ready_once, false);
+        document.addEventListener("DOMContentLoaded", this.ready, false);
+        window.addEventListener("load", this.ready, false);
       } else if (document.attachEvent != null) {
-        document.attachEvent("onreadystatechange", this.run_ready_once);
-        window.attachEvent("onload", this.run_ready_once);
+        document.attachEvent("onreadystatechange", this.ready);
+        window.attachEvent("onload", this.ready);
       }
     }
 
@@ -58,74 +76,179 @@
       return null;
     };
 
-    Juice.prototype.run_ready_once = function(e) {
-      if (document.juice.ready_fired) return null;
-      document.juice.ready_fired = true;
-      return document.juice.ready();
+    Juice.prototype.ready = function(e) {
+      return document.juice.is_ready = true;
     };
 
-    Juice.prototype.ready = function() {
-      return console.log('init');
+    Juice.prototype.load_when_ready = function() {
+      var obj;
+      console.log('load');
+      if (this.is_ready) {
+        return this.local = new JuiceLocal(this);
+      } else {
+        obj = this;
+        return setTimeout(function(){ obj.load(); }, 1);
+      }
     };
 
-    Juice.prototype.load = function() {
-      console.log(this.assets);
-      return console.log('load');
+    Juice.prototype.register_assets = function() {
+      var asset, assets, checksum, _i, _len;
+      assets = document.getElementsByTagName('asset');
+      this.assets = [];
+      for (_i = 0, _len = assets.length; _i < _len; _i++) {
+        asset = assets[_i];
+        checksum = asset.getAttribute('checksum');
+        if (checksum != null) this.assets[checksum] = new JuiceAsset(this, asset);
+      }
+      return this.log(this.assets, arguments);
     };
 
     return Juice;
 
-  })();
+  })(JuiceBase);
 
-  JuiceLocal = (function() {
+  JuiceAsset = (function(_super) {
+
+    __extends(JuiceAsset, _super);
+
+    function JuiceAsset(parent, asset) {
+      this.Juice = parent;
+      this.is_loaded = false;
+      this.checksum = asset.checksum;
+      if (asset.name != null) this.name = asset.name;
+      if (asset.version != null) this.version = asset.version;
+      if (asset.dependencies != null) {
+        this.dependencies = asset.dependencies.split(',');
+      }
+      if (asset.src != null) this.sources = asset.src.split('||');
+      this.raw = '';
+      this.listeners = {};
+      console.log(this);
+    }
+
+    JuiceAsset.prototype.onSuccess = function(asset) {
+      return this.listeners[asset.checksum] = function(){asset.load();};
+    };
+
+    JuiceAsset.prototype.load = function() {
+      var code;
+      if (this.Juice.local != null) {
+        code = this.Juice.local.get(this.checksum);
+        if (code != null) {
+          try {
+            eval(code);
+          } catch (e) {
+            this.error(e);
+          }
+          return this.success();
+        } else {
+          this.error("failed to retreive " + this.name + "::" + this.checksum + ", attempting xhr load instead");
+        }
+      }
+      return this.retrieve();
+    };
+
+    JuiceAsset.prototype.retrieve = function(index) {
+      var obj;
+      if (index == null) index = 0;
+      obj = this;
+      if (!(sources[index] != null)) return this.error("all sources failed");
+      return this.Juice.remote.get(this.sources[index], function(xhr) {
+        if (xhr.status === 200) {
+          try {
+            eval(xhr.response);
+          } catch (e) {
+            obj.error(e);
+          }
+          if (obj.Juice.local != null) {
+            obj.Juice.local.set(obj.checksum, xhr.response);
+          }
+          return obj.success();
+        } else {
+          return obj.error(xhr);
+        }
+      });
+    };
+
+    JuiceAsset.prototype.success = function() {
+      console.log('success');
+      return true;
+    };
+
+    JuiceAsset.prototype.error = function(message) {
+      if (message == null) message = null;
+      return console.log(message != null ? message : "" + this.name + "::" + this.checksum + " load failed");
+    };
+
+    return JuiceAsset;
+
+  })(JuiceBase);
+
+  JuiceLocal = (function(_super) {
+
+    __extends(JuiceLocal, _super);
 
     function JuiceLocal(parent, domain, expires) {
+      var options;
       if (domain == null) domain = document.location.origin;
       if (expires == null) expires = 730;
       if (!(typeof Persist !== "undefined" && Persist !== null)) return null;
       this.Juice = parent;
       Persist.remove('cookie');
       Persist.remove('ie');
-      this.store = new Persist.Store('JuiceStore', {
-        swf_path: "" + parent.url + "/persist.swf"
-      });
+      options = {
+        domain: domain,
+        expires: expires
+      };
+      if (parent.url != null) {
+        options['swf_path'] = "" + parent.url + "/third-party/persist-js/persist.swf";
+      } else {
+        Persist.remove('flash');
+      }
+      this.store = new Persist.Store('JuiceStore', options);
       console.log(Persist.type);
     }
 
     JuiceLocal.prototype.get = function(key) {
       try {
-        return this.store.get(key);
+        this.store.get(key);
       } catch (e) {
-        return console.log(e);
+        console.log(e);
       }
+      return null;
     };
 
     JuiceLocal.prototype.set = function(key, value) {
       if (value == null) value = '';
       try {
         if (value.length === 0) {
-          return this.store.remove(key);
+          this.store.remove(key);
         } else {
           if (Persist.size !== -1 && Persist.size < value.length) {
             throw new Error('too much data');
           }
-          return this.store.set(key, value);
+          this.store.set(key, value);
         }
       } catch (e) {
-        return console.log(e);
+        console.log(e);
       }
+      return null;
     };
 
     return JuiceLocal;
 
-  })();
+  })(JuiceBase);
 
-  JuiceRemote = (function() {
+  JuiceRemote = (function(_super) {
+
+    __extends(JuiceRemote, _super);
+
     /*
       AJAX Class
       https://github.com/visionmedia/superagent (extra factories)
       http://www.quirksmode.org/js/xmlhttp.html (most of this code)
     */
+
     function JuiceRemote(parent, domain, base_path) {
       if (domain == null) domain = document.location.origin;
       if (base_path == null) base_path = '';
@@ -176,32 +299,8 @@
 
     return JuiceRemote;
 
-  })();
+  })(JuiceBase);
 
   document.juice = new Juice;
-
-  /*
-  console.log(document.getElementsByTagName('asset'));
-  console.log(document.getElementsByName('manifest')[0].hasChildNodes());
-  console.log(document.getElementsByName('manifest')[0].childNodes());
-  */
-
-  /*
-  require
-  
-  persistJS (persist-min.js, extras/gears_init.js)
-  JSON (should be built in)
-  some form of document.ready, use jquery’s?: https://github.com/jquery/jquery/blob/master/src/core.js
-  console.log?
-  ajax
-  
-  
-  process
-  
-  loads local manifest
-  checks against remote manifest
-  requests added/updated scripts ( returned in aggregated file ); simultaneously begins loading available scripts, as determined by load order
-  splits, stores added/updated scripts; updates manifest as store is successful
-  */
 
 }).call(this);

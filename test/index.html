@@ -14,11 +14,11 @@
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 
   <asset name="jquery" version="1.7.1" preferlocal="true" checksum="checksum1" dependencies="" src="//ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js||//www.lclark.edu/core/libs/jquery/jquery-1.7.1.min.js"></asset>
-  <asset name="jquery-ui-bootstrap" version="1.8.16" checksum="checksum2" dependencies="jquery" src="//www.lclark.edu/core/libs/jquery-ui-bootstrap/js/jquery-ui-1.8.16.custom.min.js"></asset>
-  <asset name="bootstrap-transition" version="2.0" checksum="checksum3" dependencies="jquery" src="//www.lclark.edu/core/libs/bootstrap/js/bootstrap-transition.js"></asset>
-  <asset name="bootstrap-collapse" version="2.0" checksum="checksum4" dependencies="jquery-ui-bootstrap" src="//www.lclark.edu/core/libs/bootstrap/js/bootstrap-collapse.js"></asset>
+  <asset name="jquery-ui-bootstrap" version="1.8.16" checksum="checksum2" dependencies="checksum1" src="//www.lclark.edu/core/libs/jquery-ui-bootstrap/js/jquery-ui-1.8.16.custom.min.js"></asset>
+  <asset name="bootstrap-transition" version="2.0" checksum="checksum3" dependencies="checksum1" src="//www.lclark.edu/core/libs/bootstrap/js/bootstrap-transition.js"></asset>
+  <asset name="bootstrap-collapse" version="2.0" checksum="checksum4" dependencies="checksum2,checksum3" src="//www.lclark.edu/core/libs/bootstrap/js/bootstrap-collapse.js"></asset>
 
-  <script src="../juice.js?11"></script>
+  <script src="../juice.js?12" async="true"></script>
 
 </head>
 <body>

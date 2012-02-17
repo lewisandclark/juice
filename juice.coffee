@@ -1,45 +1,48 @@
 
-class Juice
+class JuiceBase
+
+  ###
+  usage: log('inside coolFunc',this,arguments);
+  http://paulirish.com/2009/log-a-lightweight-wrapper-for-consolelog/
+  ###
+  log: ( message, caller ) ->
+    return null if !message?
+    @history = @history or []
+    @history.push arguments
+    @history.push arguments
+    if console? and console.log?
+      console.log message
+      console.log caller.name if caller? and caller.name?
+      console.log(Array.prototype.slice.call(arguments))
+
+
+class Juice extends JuiceBase
 
   ###
   Ready code adapted from jQuery: https://github.com/jquery/jquery/blob/master/src/core.js
   ###
 
   constructor: () ->
-    @ready_fired = false
+    @is_ready = false
     @url = @self_dirname()
-    @assets = document.getElementsByTagName 'asset'
+    @register_assets()
     @remote = new JuiceRemote(@)
     obj = @
     @remote.get 'http://www.lclark.edu/core/libs/juice/third-party/persist-js/persist-all-min.js', (xhr) ->
       if xhr.status is 200
-        eval xhr.response
-        obj.local = new JuiceLocal(obj)
-        obj.load()
-        ### yes this works
-        if obj.local?
-          jquery = obj.local.get('jquery-1.7.1.min.js')
-          if jquery?
-            eval jquery
-            return null
-        else
-          obj.remote.get 'http://www.lclark.edu/core/libs/jquery/jquery-1.7.1.min.js', (xhr) ->
-            if xhr.status is 200
-              eval xhr.response
-              console.log 'run from load'
-              console.log $('asset').length
-              obj.local.set('jquery-1.7.1.min.js', xhr.response) if obj.local
-            else
-              console.log xhr
-        ###
+        try
+          eval xhr.response
+        catch e
+          obj.log e, arguments
+        obj.load_when_ready()
       else
-        console.log xhr
+        obj.log xhr, arguments
     if document.addEventListener?
-      document.addEventListener "DOMContentLoaded", @run_ready_once, false
-      window.addEventListener "load", @run_ready_once, false
+      document.addEventListener "DOMContentLoaded", @ready, false
+      window.addEventListener "load", @ready, false
     else if document.attachEvent?
-      document.attachEvent "onreadystatechange", @run_ready_once
-      window.attachEvent "onload", @run_ready_once
+      document.attachEvent "onreadystatechange", @ready
+      window.attachEvent "onload", @ready
 
   self_dirname: () ->
     scripts = document.getElementsByTagName 'script'
@@ -47,27 +50,93 @@ class Juice
       return script.src.replace(/\/juice\.js(\?.*)?$/, '') if script.src? and script.src.match(/\/juice\.js/)
     null
 
-  run_ready_once: (e) ->
-    return null if document.juice.ready_fired
-    document.juice.ready_fired = true
-    document.juice.ready()
+  ready: (e) ->
+    document.juice.is_ready = true
 
-  ready: () ->
-    console.log 'init'
-
-  load: () ->
-    console.log @assets
+  load_when_ready: () ->
     console.log 'load'
+    if @is_ready
+      @local = new JuiceLocal(@)
+    else
+      obj = @
+      setTimeout(`function(){ obj.load(); }`, 1)
+  
+  register_assets: () ->
+    assets = document.getElementsByTagName 'asset'
+    @assets = []
+    for asset in assets
+      checksum = asset.getAttribute('checksum')
+      @assets[checksum] = new JuiceAsset(@, asset) if checksum?
+    @log @assets, arguments
     
 
-class JuiceLocal
+class JuiceAsset extends JuiceBase
+
+  constructor: ( parent, asset ) ->
+    @Juice = parent
+    @is_loaded = false
+    @checksum = asset.checksum
+    @name = asset.name if asset.name?
+    @version = asset.version if asset.version?
+    @dependencies = asset.dependencies.split(',') if asset.dependencies?
+    @sources = asset.src.split('||') if asset.src?
+    @raw = ''
+    @listeners = {}
+    console.log @
+
+  onSuccess: ( asset ) ->
+    @listeners[asset.checksum] = `function(){asset.load();}`
+
+  load: () ->
+    if @Juice.local?
+      code = @Juice.local.get(@checksum)
+      if code?
+        try
+          eval code
+        catch e
+          @error(e)
+        return @success()
+      else
+        @error("failed to retreive #{@name}::#{@checksum}, attempting xhr load instead")
+    @retrieve()
+
+  retrieve: ( index=0 ) ->
+    obj = @
+    return @error("all sources failed") if !sources[index]?
+    @Juice.remote.get @sources[index], (xhr) ->
+      if xhr.status is 200
+        try
+          eval xhr.response
+        catch e
+          obj.error(e)
+        obj.Juice.local.set(obj.checksum, xhr.response) if obj.Juice.local?
+        obj.success()
+      else
+        obj.error(xhr)
+      
+  success: () ->
+    console.log 'success'
+    true
+
+  error: ( message=null ) ->
+    console.log if message? then message else "#{@name}::#{@checksum} load failed"
+
+
+class JuiceLocal extends JuiceBase
 
   constructor: ( parent, domain=document.location.origin, expires=730 ) ->
     return null if !Persist?
     @Juice = parent
     Persist.remove 'cookie'
     Persist.remove 'ie'
-    @store = new Persist.Store 'JuiceStore', { swf_path: "#{parent.url}/persist.swf" }
+    options =
+      domain: domain
+      expires: expires
+    if parent.url?
+      options['swf_path'] = "#{parent.url}/third-party/persist-js/persist.swf"
+    else
+      Persist.remove 'flash'
+    @store = new Persist.Store 'JuiceStore', options
     console.log Persist.type
 
   get: (key) ->
@@ -75,6 +144,7 @@ class JuiceLocal
       @store.get key
     catch e
       console.log e
+    null
 
   set: (key, value='') ->
     try
@@ -85,9 +155,10 @@ class JuiceLocal
         @store.set key, value
     catch e
       console.log e
+    null
 
 
-class JuiceRemote
+class JuiceRemote extends JuiceBase
 
   ###
   AJAX Class
@@ -134,28 +205,3 @@ class JuiceRemote
 
 
 document.juice = new Juice
-
-###
-console.log(document.getElementsByTagName('asset'));
-console.log(document.getElementsByName('manifest')[0].hasChildNodes());
-console.log(document.getElementsByName('manifest')[0].childNodes());
-###
-
-###
-require
-
-persistJS (persist-min.js, extras/gears_init.js)
-JSON (should be built in)
-some form of document.ready, use jquery’s?: https://github.com/jquery/jquery/blob/master/src/core.js
-console.log?
-ajax
-
-
-process
-
-loads local manifest
-checks against remote manifest
-requests added/updated scripts ( returned in aggregated file ); simultaneously begins loading available scripts, as determined by load order
-splits, stores added/updated scripts; updates manifest as store is successful
-
-###
