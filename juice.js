@@ -6,40 +6,71 @@
       Ready code adapted from jQuery: https://github.com/jquery/jquery/blob/master/src/core.js
     */
     function Juice() {
+      var obj;
       this.ready_fired = false;
-      this.remote = new JuiceRemote;
-      this.remote.get('http://www.lclark.edu/core/libs/persist-js/persist-min.js', function(xhr) {
-        eval(xhr.response);
-        console.log(xhr);
-        Persist.remove('cookie');
-        Persist.remove('ie');
-        return Persist.remove('flash');
-      });
-      this.remote.get('http://www.lclark.edu/core/libs/jquery/jquery-1.7.1.min.js', function(xhr) {
-        eval(xhr.response);
-        console.log(xhr);
-        return console.log($);
+      this.url = this.self_dirname();
+      this.assets = document.getElementsByTagName('asset');
+      this.remote = new JuiceRemote(this);
+      obj = this;
+      this.remote.get('http://www.lclark.edu/core/libs/juice/third-party/persist-js/persist-all-min.js', function(xhr) {
+        if (xhr.status === 200) {
+          eval(xhr.response);
+          obj.local = new JuiceLocal(obj);
+          return obj.load();
+          /* yes this works
+          if obj.local?
+            jquery = obj.local.get('jquery-1.7.1.min.js')
+            if jquery?
+              eval jquery
+              return null
+          else
+            obj.remote.get 'http://www.lclark.edu/core/libs/jquery/jquery-1.7.1.min.js', (xhr) ->
+              if xhr.status is 200
+                eval xhr.response
+                console.log 'run from load'
+                console.log $('asset').length
+                obj.local.set('jquery-1.7.1.min.js', xhr.response) if obj.local
+              else
+                console.log xhr
+          */
+        } else {
+          return console.log(xhr);
+        }
       });
       if (document.addEventListener != null) {
-        document.addEventListener("DOMContentLoaded", this.ready, false);
-        window.addEventListener("load", this.ready, false);
+        document.addEventListener("DOMContentLoaded", this.run_ready_once, false);
+        window.addEventListener("load", this.run_ready_once, false);
       } else if (document.attachEvent != null) {
-        document.attachEvent("onreadystatechange", this.ready);
-        window.attachEvent("onload", this.ready);
+        document.attachEvent("onreadystatechange", this.run_ready_once);
+        window.attachEvent("onload", this.run_ready_once);
       }
     }
 
-    Juice.prototype.ready = function(e) {
+    Juice.prototype.self_dirname = function() {
+      var script, scripts, _i, _len;
+      scripts = document.getElementsByTagName('script');
+      for (_i = 0, _len = scripts.length; _i < _len; _i++) {
+        script = scripts[_i];
+        if ((script.src != null) && script.src.match(/\/juice\.js/)) {
+          return script.src.replace(/\/juice\.js(\?.*)?$/, '');
+        }
+      }
+      return null;
+    };
+
+    Juice.prototype.run_ready_once = function(e) {
       if (document.juice.ready_fired) return null;
-      return document.juice.init();
+      document.juice.ready_fired = true;
+      return document.juice.ready();
     };
 
-    Juice.prototype.init = function() {
-      return this.ready_fired = true;
+    Juice.prototype.ready = function() {
+      return console.log('init');
     };
 
-    Juice.prototype.assets = function() {
-      return document.getElementsByTagName('asset');
+    Juice.prototype.load = function() {
+      console.log(this.assets);
+      return console.log('load');
     };
 
     return Juice;
@@ -48,16 +79,17 @@
 
   JuiceLocal = (function() {
 
-    function JuiceLocal(domain, expires) {
+    function JuiceLocal(parent, domain, expires) {
       if (domain == null) domain = document.location.origin;
       if (expires == null) expires = 730;
+      if (!(typeof Persist !== "undefined" && Persist !== null)) return null;
+      this.Juice = parent;
       Persist.remove('cookie');
       Persist.remove('ie');
-      Persist.remove('flash');
       this.store = new Persist.Store('JuiceStore', {
-        domain: domain,
-        expires: expires
+        swf_path: "" + parent.url + "/persist.swf"
       });
+      console.log(Persist.type);
     }
 
     JuiceLocal.prototype.get = function(key) {
@@ -94,9 +126,10 @@
       https://github.com/visionmedia/superagent (extra factories)
       http://www.quirksmode.org/js/xmlhttp.html (most of this code)
     */
-    function JuiceRemote(domain, base_path) {
+    function JuiceRemote(parent, domain, base_path) {
       if (domain == null) domain = document.location.origin;
       if (base_path == null) base_path = '';
+      this.Juice = parent;
       this.factories = [function(){ return new XMLHttpRequest(); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP 6.0"); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP 3.0"); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP"); }, function(){ return new ActiveXObject("Msxml3.XMLHTTP"); }, function(){ return new ActiveXObject("Microsoft.XMLHTTP"); }];
     }
 
@@ -127,7 +160,6 @@
         request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
       }
       request.onreadystatechange = function() {
-        console.log('readystate');
         if (request.readyState !== 4) return null;
         if (request.status !== 200 && request.status !== 304) {
           throw new Error('HTTP error: ' + request.status);

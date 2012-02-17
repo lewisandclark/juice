@@ -1,52 +1,74 @@
 
 class Juice
 
-
   ###
   Ready code adapted from jQuery: https://github.com/jquery/jquery/blob/master/src/core.js
   ###
 
   constructor: () ->
     @ready_fired = false
-    @remote = new JuiceRemote
-    @remote.get 'http://www.lclark.edu/core/libs/persist-js/persist-min.js', (xhr) ->
-      eval xhr.response
-      console.log xhr
-      Persist.remove 'cookie'
-      Persist.remove 'ie'
-      Persist.remove 'flash'
-    @remote.get 'http://www.lclark.edu/core/libs/jquery/jquery-1.7.1.min.js', (xhr) ->
-      eval xhr.response
-      console.log xhr
-      console.log $
+    @url = @self_dirname()
+    @assets = document.getElementsByTagName 'asset'
+    @remote = new JuiceRemote(@)
+    obj = @
+    @remote.get 'http://www.lclark.edu/core/libs/juice/third-party/persist-js/persist-all-min.js', (xhr) ->
+      if xhr.status is 200
+        eval xhr.response
+        obj.local = new JuiceLocal(obj)
+        obj.load()
+        ### yes this works
+        if obj.local?
+          jquery = obj.local.get('jquery-1.7.1.min.js')
+          if jquery?
+            eval jquery
+            return null
+        else
+          obj.remote.get 'http://www.lclark.edu/core/libs/jquery/jquery-1.7.1.min.js', (xhr) ->
+            if xhr.status is 200
+              eval xhr.response
+              console.log 'run from load'
+              console.log $('asset').length
+              obj.local.set('jquery-1.7.1.min.js', xhr.response) if obj.local
+            else
+              console.log xhr
+        ###
+      else
+        console.log xhr
     if document.addEventListener?
-      document.addEventListener "DOMContentLoaded", @ready, false
-      window.addEventListener "load", @ready, false
+      document.addEventListener "DOMContentLoaded", @run_ready_once, false
+      window.addEventListener "load", @run_ready_once, false
     else if document.attachEvent?
-      document.attachEvent "onreadystatechange", @ready
-      window.attachEvent "onload", @ready
+      document.attachEvent "onreadystatechange", @run_ready_once
+      window.attachEvent "onload", @run_ready_once
 
-  ready: (e) ->
+  self_dirname: () ->
+    scripts = document.getElementsByTagName 'script'
+    for script in scripts
+      return script.src.replace(/\/juice\.js(\?.*)?$/, '') if script.src? and script.src.match(/\/juice\.js/)
+    null
+
+  run_ready_once: (e) ->
     return null if document.juice.ready_fired
-    document.juice.init()
+    document.juice.ready_fired = true
+    document.juice.ready()
 
-  init: () ->
-    @ready_fired = true
+  ready: () ->
+    console.log 'init'
 
-  assets: () ->
-    document.getElementsByTagName 'asset'
-
-    
-  
+  load: () ->
+    console.log @assets
+    console.log 'load'
     
 
 class JuiceLocal
 
-  constructor: ( domain=document.location.origin, expires=730 ) ->
+  constructor: ( parent, domain=document.location.origin, expires=730 ) ->
+    return null if !Persist?
+    @Juice = parent
     Persist.remove 'cookie'
     Persist.remove 'ie'
-    Persist.remove 'flash'
-    @store = new Persist.Store 'JuiceStore', { domain: domain, expires: expires }
+    @store = new Persist.Store 'JuiceStore', { swf_path: "#{parent.url}/persist.swf" }
+    console.log Persist.type
 
   get: (key) ->
     try
@@ -73,7 +95,8 @@ class JuiceRemote
   http://www.quirksmode.org/js/xmlhttp.html (most of this code)
   ###
 
-  constructor: ( domain=document.location.origin, base_path='' ) ->
+  constructor: ( parent, domain=document.location.origin, base_path='' ) ->
+    @Juice = parent
     @factories = [
       `function(){ return new XMLHttpRequest(); }`,
       `function(){ return new ActiveXObject("Msxml2.XMLHTTP 6.0"); }`,
@@ -100,7 +123,6 @@ class JuiceRemote
     request.open method, url, true
     request.setRequestHeader 'Content-type', 'application/x-www-form-urlencoded' if postData?
     request.onreadystatechange = () ->
-      console.log('readystate')
       return null if request.readyState isnt 4
       throw new Error('HTTP error: ' + request.status) if request.status isnt 200 and request.status isnt 304
       callback(request)
