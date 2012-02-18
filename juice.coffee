@@ -25,6 +25,7 @@ class Juice extends JuiceBase
   constructor: () ->
     @is_ready = false
     @url = @self_dirname()
+    @assets = {}
     @register_assets()
     @remote = new JuiceRemote(@)
     obj = @
@@ -57,17 +58,19 @@ class Juice extends JuiceBase
     console.log 'load'
     if @is_ready
       @local = new JuiceLocal(@)
+      for checksum, asset of @assets
+        asset.load() if !asset.dependencies?
     else
       obj = @
       setTimeout(`function(){ obj.load(); }`, 1)
   
   register_assets: () ->
     assets = document.getElementsByTagName 'asset'
-    @assets = []
     for asset in assets
-      checksum = asset.getAttribute('checksum')
+      checksum = asset.getAttribute 'checksum'
       @assets[checksum] = new JuiceAsset(@, asset) if checksum?
-    @log @assets, arguments
+    for checksum, asset of @assets
+      asset.register()
     
 
 class JuiceAsset extends JuiceBase
@@ -75,19 +78,22 @@ class JuiceAsset extends JuiceBase
   constructor: ( parent, asset ) ->
     @Juice = parent
     @is_loaded = false
-    @checksum = asset.checksum
-    @name = asset.name if asset.name?
-    @version = asset.version if asset.version?
-    @dependencies = asset.dependencies.split(',') if asset.dependencies?
-    @sources = asset.src.split('||') if asset.src?
+    for attribute in ['checksum', 'name', 'version', 'dependencies', 'src']
+      value = asset.getAttribute attribute
+      @[attribute] = value if value? and value isnt ''
+    @dependencies = @dependencies.split(',') if @dependencies?
+    @src = @src.split('||') if @src?
     @raw = ''
     @listeners = {}
-    console.log @
 
   onSuccess: ( asset ) ->
     @listeners[asset.checksum] = `function(){asset.load();}`
 
   load: () ->
+    console.log "loading #{@name}"
+    return null if !@raw?
+    console.log !@raw?
+    console.log "loading #{@name}"
     if @Juice.local?
       code = @Juice.local.get(@checksum)
       if code?
@@ -102,8 +108,8 @@ class JuiceAsset extends JuiceBase
 
   retrieve: ( index=0 ) ->
     obj = @
-    return @error("all sources failed") if !sources[index]?
-    @Juice.remote.get @sources[index], (xhr) ->
+    return @error("all sources failed") if !@src[index]?
+    @Juice.remote.get @src[index], (xhr) ->
       if xhr.status is 200
         try
           eval xhr.response
@@ -113,7 +119,12 @@ class JuiceAsset extends JuiceBase
         obj.success()
       else
         obj.error(xhr)
-      
+
+  register: () ->
+    return null if !@dependencies?
+    for dependency in @dependencies
+      @Juice.assets[dependency].onSuccess(@) if @Juice.assets[dependency]?
+
   success: () ->
     console.log 'success'
     true
@@ -199,6 +210,24 @@ class JuiceRemote extends JuiceBase
       callback(request)
     return null if request.readyState is 4
     request.send(postData)
+
+  ###
+  // to recapitulate
+  if (xhr && "withCredentials" in xhr){
+      xhr.open(type, url, true);
+  } else if (typeof XDomainRequest != "undefined"){
+      xhr = new XDomainRequest();
+      xhr.open(type, url);
+  }
+  else
+      xhr = null;
+  
+  // NOT SUPPORTED, then fallback
+  if (!xhr) 
+      async_load_javascript(CROSSDOMAINJS_PATH + "flXHR/flXHR.js", function () {
+          _ajax_with_flxhr(options);
+      });
+  ###
 
   get: (url, callback) ->
     @post(url, callback)

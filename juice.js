@@ -40,6 +40,7 @@
       var obj;
       this.is_ready = false;
       this.url = this.self_dirname();
+      this.assets = {};
       this.register_assets();
       this.remote = new JuiceRemote(this);
       obj = this;
@@ -81,10 +82,21 @@
     };
 
     Juice.prototype.load_when_ready = function() {
-      var obj;
+      var asset, checksum, obj, _ref, _results;
       console.log('load');
       if (this.is_ready) {
-        return this.local = new JuiceLocal(this);
+        this.local = new JuiceLocal(this);
+        _ref = this.assets;
+        _results = [];
+        for (checksum in _ref) {
+          asset = _ref[checksum];
+          if (!(asset.dependencies != null)) {
+            _results.push(asset.load());
+          } else {
+            _results.push(void 0);
+          }
+        }
+        return _results;
       } else {
         obj = this;
         return setTimeout(function(){ obj.load(); }, 1);
@@ -92,15 +104,20 @@
     };
 
     Juice.prototype.register_assets = function() {
-      var asset, assets, checksum, _i, _len;
+      var asset, assets, checksum, _i, _len, _ref, _results;
       assets = document.getElementsByTagName('asset');
-      this.assets = [];
       for (_i = 0, _len = assets.length; _i < _len; _i++) {
         asset = assets[_i];
         checksum = asset.getAttribute('checksum');
         if (checksum != null) this.assets[checksum] = new JuiceAsset(this, asset);
       }
-      return this.log(this.assets, arguments);
+      _ref = this.assets;
+      _results = [];
+      for (checksum in _ref) {
+        asset = _ref[checksum];
+        _results.push(asset.register());
+      }
+      return _results;
     };
 
     return Juice;
@@ -112,18 +129,21 @@
     __extends(JuiceAsset, _super);
 
     function JuiceAsset(parent, asset) {
+      var attribute, value, _i, _len, _ref;
       this.Juice = parent;
       this.is_loaded = false;
-      this.checksum = asset.checksum;
-      if (asset.name != null) this.name = asset.name;
-      if (asset.version != null) this.version = asset.version;
-      if (asset.dependencies != null) {
-        this.dependencies = asset.dependencies.split(',');
+      _ref = ['checksum', 'name', 'version', 'dependencies', 'src'];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        attribute = _ref[_i];
+        value = asset.getAttribute(attribute);
+        if ((value != null) && value !== '') this[attribute] = value;
       }
-      if (asset.src != null) this.sources = asset.src.split('||');
+      if (this.dependencies != null) {
+        this.dependencies = this.dependencies.split(',');
+      }
+      if (this.src != null) this.src = this.src.split('||');
       this.raw = '';
       this.listeners = {};
-      console.log(this);
     }
 
     JuiceAsset.prototype.onSuccess = function(asset) {
@@ -132,6 +152,10 @@
 
     JuiceAsset.prototype.load = function() {
       var code;
+      console.log("loading " + this.name);
+      if (!(this.raw != null)) return null;
+      console.log(!(this.raw != null));
+      console.log("loading " + this.name);
       if (this.Juice.local != null) {
         code = this.Juice.local.get(this.checksum);
         if (code != null) {
@@ -152,8 +176,8 @@
       var obj;
       if (index == null) index = 0;
       obj = this;
-      if (!(sources[index] != null)) return this.error("all sources failed");
-      return this.Juice.remote.get(this.sources[index], function(xhr) {
+      if (!(this.src[index] != null)) return this.error("all sources failed");
+      return this.Juice.remote.get(this.src[index], function(xhr) {
         if (xhr.status === 200) {
           try {
             eval(xhr.response);
@@ -168,6 +192,22 @@
           return obj.error(xhr);
         }
       });
+    };
+
+    JuiceAsset.prototype.register = function() {
+      var dependency, _i, _len, _ref, _results;
+      if (!(this.dependencies != null)) return null;
+      _ref = this.dependencies;
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        dependency = _ref[_i];
+        if (this.Juice.assets[dependency] != null) {
+          _results.push(this.Juice.assets[dependency].onSuccess(this));
+        } else {
+          _results.push(void 0);
+        }
+      }
+      return _results;
     };
 
     JuiceAsset.prototype.success = function() {
@@ -292,6 +332,24 @@
       if (request.readyState === 4) return null;
       return request.send(postData);
     };
+
+    /*
+      // to recapitulate
+      if (xhr && "withCredentials" in xhr){
+          xhr.open(type, url, true);
+      } else if (typeof XDomainRequest != "undefined"){
+          xhr = new XDomainRequest();
+          xhr.open(type, url);
+      }
+      else
+          xhr = null;
+      
+      // NOT SUPPORTED, then fallback
+      if (!xhr) 
+          async_load_javascript(CROSSDOMAINJS_PATH + "flXHR/flXHR.js", function () {
+              _ajax_with_flxhr(options);
+          });
+    */
 
     JuiceRemote.prototype.get = function(url, callback) {
       return this.post(url, callback);
