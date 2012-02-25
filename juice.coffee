@@ -15,6 +15,8 @@ class JuiceBase
       console.log caller.name if caller? and caller.name?
       console.log(Array.prototype.slice.call(arguments))
 
+  error: ( message='' ) ->
+    console.log message
 
 class Juice extends JuiceBase
 
@@ -25,6 +27,7 @@ class Juice extends JuiceBase
   constructor: () ->
     @is_ready = false
     @url = @self_dirname()
+    @origin = document.location.host
     @assets = {}
     @register_assets()
     @remote = new JuiceRemote(@)
@@ -86,6 +89,12 @@ class JuiceAsset extends JuiceBase
     @raw = ''
     @listeners = {}
 
+  is_cross_domain: ( url ) ->
+    url = url.split('//')
+    return false if url.length is 1
+    host = url[1].split('/').shift()
+    (host isnt @Juice.origin)
+
   onSuccess: ( asset ) ->
     @listeners[asset.checksum] = `function(){asset.load();}`
 
@@ -103,14 +112,14 @@ class JuiceAsset extends JuiceBase
           @error(e)
         return @success()
       else
-        @error("failed to retreive #{@name}::#{@checksum}, attempting xhr load instead")
+        @log("failed to retrieve #{@name}::#{@checksum}, attempting xhr load instead")
     @retrieve()
 
   retrieve: ( index=0 ) ->
     obj = @
     return @error("all sources failed") if !@src[index]?
     @Juice.remote.get @src[index], (xhr) ->
-      if xhr.status is 200
+      if xhr.status is 200 or xhr.status is 304
         try
           eval xhr.response
         catch e
@@ -118,7 +127,10 @@ class JuiceAsset extends JuiceBase
         obj.Juice.local.set(obj.checksum, xhr.response) if obj.Juice.local?
         obj.success()
       else
-        obj.error(xhr)
+        if obj.src.length - 1 > index
+          obj.retrieve(index + 1)
+        else
+          obj.error("unable to retrieve code #{xhr}")
 
   register: () ->
     return null if !@dependencies?
@@ -126,11 +138,10 @@ class JuiceAsset extends JuiceBase
       @Juice.assets[dependency].onSuccess(@) if @Juice.assets[dependency]?
 
   success: () ->
-    console.log 'success'
+    @log("retrieved and stored #{@name}::#{@checksum}")
+    for checksum, listener of @listeners
+      listener()
     true
-
-  error: ( message=null ) ->
-    console.log if message? then message else "#{@name}::#{@checksum} load failed"
 
 
 class JuiceLocal extends JuiceBase
@@ -154,7 +165,7 @@ class JuiceLocal extends JuiceBase
     try
       @store.get key
     catch e
-      console.log e
+      @error(e)
     null
 
   set: (key, value='') ->
@@ -165,7 +176,7 @@ class JuiceLocal extends JuiceBase
         throw new Error('too much data') if Persist.size != -1 && Persist.size < value.length
         @store.set key, value
     catch e
-      console.log e
+      @error(e)
     null
 
 
@@ -177,7 +188,7 @@ class JuiceRemote extends JuiceBase
   http://www.quirksmode.org/js/xmlhttp.html (most of this code)
   ###
 
-  constructor: ( parent, domain=document.location.origin, base_path='' ) ->
+  constructor: ( parent ) ->
     @Juice = parent
     @factories = [
       `function(){ return new XMLHttpRequest(); }`,
@@ -188,15 +199,15 @@ class JuiceRemote extends JuiceBase
       `function(){ return new ActiveXObject("Microsoft.XMLHTTP"); }`,
     ]
 
-  createXHR: () ->
-    xmlhttp = false
+  createXHR: ( url ) ->
+    xhr = false
     for factory in @factories
       try
-        xmlhttp = factory()
+        xhr = factory()
       catch e
         continue
       break
-    xmlhttp
+    xhr
 
   post: (url, callback, postData=null) ->
     request = @createXHR()
@@ -204,30 +215,12 @@ class JuiceRemote extends JuiceBase
     method = if postData? then 'POST' else 'GET'
     request.open method, url, true
     request.setRequestHeader 'Content-type', 'application/x-www-form-urlencoded' if postData?
+    obj = @
     request.onreadystatechange = () ->
       return null if request.readyState isnt 4
-      throw new Error('HTTP error: ' + request.status) if request.status isnt 200 and request.status isnt 304
       callback(request)
     return null if request.readyState is 4
     request.send(postData)
-
-  ###
-  // to recapitulate
-  if (xhr && "withCredentials" in xhr){
-      xhr.open(type, url, true);
-  } else if (typeof XDomainRequest != "undefined"){
-      xhr = new XDomainRequest();
-      xhr.open(type, url);
-  }
-  else
-      xhr = null;
-  
-  // NOT SUPPORTED, then fallback
-  if (!xhr) 
-      async_load_javascript(CROSSDOMAINJS_PATH + "flXHR/flXHR.js", function () {
-          _ajax_with_flxhr(options);
-      });
-  ###
 
   get: (url, callback) ->
     @post(url, callback)

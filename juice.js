@@ -24,6 +24,11 @@
       }
     };
 
+    JuiceBase.prototype.error = function(message) {
+      if (message == null) message = '';
+      return console.log(message);
+    };
+
     return JuiceBase;
 
   })();
@@ -40,6 +45,7 @@
       var obj;
       this.is_ready = false;
       this.url = this.self_dirname();
+      this.origin = document.location.host;
       this.assets = {};
       this.register_assets();
       this.remote = new JuiceRemote(this);
@@ -146,6 +152,14 @@
       this.listeners = {};
     }
 
+    JuiceAsset.prototype.is_cross_domain = function(url) {
+      var host;
+      url = url.split('//');
+      if (url.length === 1) return false;
+      host = url[1].split('/').shift();
+      return host !== this.Juice.origin;
+    };
+
     JuiceAsset.prototype.onSuccess = function(asset) {
       return this.listeners[asset.checksum] = function(){asset.load();};
     };
@@ -166,7 +180,7 @@
           }
           return this.success();
         } else {
-          this.error("failed to retreive " + this.name + "::" + this.checksum + ", attempting xhr load instead");
+          this.log("failed to retrieve " + this.name + "::" + this.checksum + ", attempting xhr load instead");
         }
       }
       return this.retrieve();
@@ -178,7 +192,7 @@
       obj = this;
       if (!(this.src[index] != null)) return this.error("all sources failed");
       return this.Juice.remote.get(this.src[index], function(xhr) {
-        if (xhr.status === 200) {
+        if (xhr.status === 200 || xhr.status === 304) {
           try {
             eval(xhr.response);
           } catch (e) {
@@ -189,7 +203,11 @@
           }
           return obj.success();
         } else {
-          return obj.error(xhr);
+          if (obj.src.length - 1 > index) {
+            return obj.retrieve(index + 1);
+          } else {
+            return obj.error("unable to retrieve code " + xhr);
+          }
         }
       });
     };
@@ -211,13 +229,14 @@
     };
 
     JuiceAsset.prototype.success = function() {
-      console.log('success');
+      var checksum, listener, _ref;
+      this.log("retrieved and stored " + this.name + "::" + this.checksum);
+      _ref = this.listeners;
+      for (checksum in _ref) {
+        listener = _ref[checksum];
+        listener();
+      }
       return true;
-    };
-
-    JuiceAsset.prototype.error = function(message) {
-      if (message == null) message = null;
-      return console.log(message != null ? message : "" + this.name + "::" + this.checksum + " load failed");
     };
 
     return JuiceAsset;
@@ -253,7 +272,7 @@
       try {
         this.store.get(key);
       } catch (e) {
-        console.log(e);
+        this.error(e);
       }
       return null;
     };
@@ -270,7 +289,7 @@
           this.store.set(key, value);
         }
       } catch (e) {
-        console.log(e);
+        this.error(e);
       }
       return null;
     };
@@ -289,31 +308,29 @@
       http://www.quirksmode.org/js/xmlhttp.html (most of this code)
     */
 
-    function JuiceRemote(parent, domain, base_path) {
-      if (domain == null) domain = document.location.origin;
-      if (base_path == null) base_path = '';
+    function JuiceRemote(parent) {
       this.Juice = parent;
       this.factories = [function(){ return new XMLHttpRequest(); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP 6.0"); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP 3.0"); }, function(){ return new ActiveXObject("Msxml2.XMLHTTP"); }, function(){ return new ActiveXObject("Msxml3.XMLHTTP"); }, function(){ return new ActiveXObject("Microsoft.XMLHTTP"); }];
     }
 
-    JuiceRemote.prototype.createXHR = function() {
-      var factory, xmlhttp, _i, _len, _ref;
-      xmlhttp = false;
+    JuiceRemote.prototype.createXHR = function(url) {
+      var factory, xhr, _i, _len, _ref;
+      xhr = false;
       _ref = this.factories;
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         factory = _ref[_i];
         try {
-          xmlhttp = factory();
+          xhr = factory();
         } catch (e) {
           continue;
         }
         break;
       }
-      return xmlhttp;
+      return xhr;
     };
 
     JuiceRemote.prototype.post = function(url, callback, postData) {
-      var method, request;
+      var method, obj, request;
       if (postData == null) postData = null;
       request = this.createXHR();
       if (!(request != null)) return null;
@@ -322,34 +339,14 @@
       if (postData != null) {
         request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
       }
+      obj = this;
       request.onreadystatechange = function() {
         if (request.readyState !== 4) return null;
-        if (request.status !== 200 && request.status !== 304) {
-          throw new Error('HTTP error: ' + request.status);
-        }
         return callback(request);
       };
       if (request.readyState === 4) return null;
       return request.send(postData);
     };
-
-    /*
-      // to recapitulate
-      if (xhr && "withCredentials" in xhr){
-          xhr.open(type, url, true);
-      } else if (typeof XDomainRequest != "undefined"){
-          xhr = new XDomainRequest();
-          xhr.open(type, url);
-      }
-      else
-          xhr = null;
-      
-      // NOT SUPPORTED, then fallback
-      if (!xhr) 
-          async_load_javascript(CROSSDOMAINJS_PATH + "flXHR/flXHR.js", function () {
-              _ajax_with_flxhr(options);
-          });
-    */
 
     JuiceRemote.prototype.get = function(url, callback) {
       return this.post(url, callback);
